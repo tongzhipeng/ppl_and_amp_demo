@@ -11,6 +11,7 @@
 #include <numeric>
 #include <amp.h>
 #include <amp_math.h>
+#include "benchmark_util.h"
 using namespace std;
 using namespace Concurrency;
 using namespace Concurrency::fast_math;
@@ -121,27 +122,74 @@ vector<int> create_matrix(int size)
 	return matrix;
 }
 
-void TestAddMatrix()
+void TestAddMatrixAmp(const int rows, const int columns)
 {
-	const int rows = 100;
-	const int columns = 100;
 	vector<int> a = create_matrix(rows * columns);
 	vector<int> b = create_matrix(rows * columns);
 	vector<int> c(rows * columns);
+	//array_view<const int, 2> av(rows, columns, a);
+	//array_view<const int, 2> bv(rows, columns, b);
+	//array_view<int, 2> cv(rows, columns, c);
 	array_view<const int, 2> av(rows, columns, a);
 	array_view<const int, 2> bv(rows, columns, b);
 	array_view<int, 2> cv(rows, columns, c);
 	cv.discard_data();
 	parallel_for_each(cv.extent, [=](index<2> idx) restrict(amp) {
 		cv[idx] = av[idx] + bv[idx];
+		cv[idx] /= (bv[idx]+0.1);
+		cv[idx] *= av[idx];
 		});
 	index<2> idx(14, 12);
 	std::cout << cv[idx] << std::endl;
 }
 
+void TestAddMatrixParallel(const int rows, const int columns)
+{
+	vector<int> a = create_matrix(rows * columns);
+	vector<int> b = create_matrix(rows * columns);
+	vector<int> c(rows * columns);
+	parallel_for(0, rows * columns, [&](int idx) {
+		c[idx] = a[idx] + b[idx];
+		c[idx] /= (b[idx]+0.1);
+		c[idx] *= a[idx];
+		});
+	std::cout << c[columns * 14 + 12] << std::endl;
+}
+
+void TestAddMatrix(const int rows, const int columns)
+{
+	vector<int> a = create_matrix(rows * columns);
+	vector<int> b = create_matrix(rows * columns);
+	vector<int> c(rows * columns);
+	for (size_t idx = 0; idx < rows * columns; idx++)
+	{
+		c[idx] = a[idx] + b[idx];
+		c[idx] /= (b[idx] + 0.1);
+		c[idx] *= a[idx];
+	}
+	std::cout << c[columns * 14 + 12] << std::endl;
+}
+
+
 int main()
 {
-	TestAddMatrix();
+	int rows = 1000, columns = 5000;
+	CStopWatch timer;
+	timer.start();
+	TestAddMatrixAmp(rows, columns);
+	timer.stop();
+	double amp_time = timer.getElapsedTime();
+
+	timer.start();
+	TestAddMatrixParallel(rows, columns);
+	timer.stop();
+	double parallel_time = timer.getElapsedTime();
+
+	timer.start();
+	TestAddMatrix(rows, columns);
+	timer.stop();
+	double normal_time = timer.getElapsedTime();
+	cout << "amp_time=" << amp_time << ", parallel_time=" << parallel_time << ", normal_time=" << normal_time << endl;
 	return 0;
 }
 
